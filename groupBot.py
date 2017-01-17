@@ -11,7 +11,7 @@ from Queue import Queue
 users = []
 # Here I save the chat_id of the administrator when he first enters the bot
 # In the second position there's a 0 if we are not in a poll, 1 in other case
-admin = [0,0]
+admin = [0,0,0]
 # The passwords that the bot asks from a user or an admin
 claveAdmin = '1720'
 claveUser = '3411'
@@ -23,6 +23,13 @@ enc = []
 opciones = []
 res = []
 cont = []
+
+def leerCopiaSeg():
+    cop = open('copiaSeg','r')
+    admin[0] = int(cop.readline())
+    for u in cop:
+        users.append(int(u))
+    cop.close()
 
 # If there was a copy of the data, we load the previous admin and users
 if os.path.exists('copiaSeg'):
@@ -56,13 +63,12 @@ keyboardLeyendo = InlineKeyboardMarkup(inline_keyboard=[
                ])
 
 # Function that creates a custom keyboard for the poll.
-# The first param is the text of the mail, the next ones are the poll options separeted with comas
-def encuesta(opciones):
- listado = opciones.split(';') # Opciones separadas por punto y coma
+# The first param is the text of the mail, the next ones are the poll options separeted with semicolons
+def encuesta(op):
+ listado = op.split(';') # Options separated with semicolons
  texto = listado.pop(0)
  botones = []
  n = 0
- res = []
  
  for i in listado:
   res.append(0)
@@ -72,7 +78,8 @@ def encuesta(opciones):
   opciones.append(i)
   n = n+1;
  
- enc = [texto, InlineKeyboardMarkup(inline_keyboard = botones)]
+ enc.append(texto)
+ enc.append(InlineKeyboardMarkup(inline_keyboard = botones))
  
  botones.append([InlineKeyboardButton(text='(Aspecto correcto, crear encuesta.)', callback_data='enviarEnc')])
  botones.append([InlineKeyboardButton(text='(Aspecto incorrecto, rehacer encuesta.)', callback_data='encuesta')])
@@ -80,7 +87,7 @@ def encuesta(opciones):
   
  return [texto, InlineKeyboardMarkup(inline_keyboard = botones)]
 
- 
+
 def on_chat_message(msg):
     content_type, chat_type, chat_id = telepot.glance(msg)   
     
@@ -89,17 +96,19 @@ def on_chat_message(msg):
       bot.sendMessage(chat_id, 'Bienvenido al bot de ELP. ¿Eres un alumno o el profesor?', reply_markup=keyboardLogin)
      if msg['text'] == '/mostrar' and chat_id in users:
       bot.sendMessage(chat_id, 'Puede enviar un mensaje al profesor pulsando el boton de abajo.', reply_markup=keyboardUser)
+     if msg['text'] == '/mostrar' and chat_id == admin[0]:
+      menuAdmin()
      elif msg['text'] == claveAdmin and admin[0] == 0:
       admin[0] = chat_id
       if not os.path.exists('copiaSeg'):
        crearCopiaSeg()
-      bot.sendMessage(chat_id,"", reply_markup=ReplyKeyboardRemove(True))
       menuAdmin()
      elif msg['text'] == claveUser and not chat_id in users:
       bot.sendMessage(chat_id, 'Clave correcta. Bienvenido al bot de ELP. Cuando el profesor envíe algo yo te lo haré llegar. Si tienes algún mensaje para el profesor o alguna sugerencia, puedo hacérselo llegar si pulsas el botón de abajo.', reply_markup=keyboardUser)
+      users.append(chat_id)
       anadirACopiaSeg(chat_id)
      elif chat_id in senders:
-      senders.remove(a)
+      senders.remove(chat_id)
       buzon.append(msg['text'])
       bot.sendMessage(chat_id, 'Mensaje enviado.', reply_markup=keyboardUser)
      elif chat_id == admin[0] and admin[1] == 1 and msg['text'] == '/finEncuesta':
@@ -108,6 +117,10 @@ def on_chat_message(msg):
      elif chat_id == admin[0] and admin[1] == 1:
       res = encuesta(msg['text'])
       bot.sendMessage(chat_id, res[0], reply_markup=res[1])
+     elif chat_id == admin[0] and admin[2] == 1:
+      difusion(msg['text'])
+      bot.sendMessage(chat_id, "Mensaje enviado al grupo.")
+      menuAdmin()
      
       
 
@@ -128,9 +141,15 @@ def on_callback_query(msg):
     elif query_data == 'encuesta':
       admin[1] = 1
       bot.sendMessage(from_id, "Escriba el texto del mensaje primero y las opciones a elegir de la encuesta separadas por punto y coma. Ej: Texto del mensaje; Opcion 1; Opcion 2; ...", reply_markup=keyboardMensaje)
+    elif query_data == 'difusion':
+      admin[2] = 1
+      bot.sendMessage(from_id, "Escriba el mensaje que quiere enviar.", reply_markup=keyboardMensaje)
     elif query_data == 'cancelar':
       if from_id == admin[0] and admin[1] == 1: # El admin cancela la encuesta
        admin[1] = 0
+       menuAdmin()
+      elif from_id == admin[0] and admin[2] == 1: # El admin cancela la encuesta
+       admin[2] = 0
        menuAdmin()
       elif from_id in senders: # Un usuario cancela el envio de un mensaje
        senders.remove(from_id)
@@ -141,20 +160,22 @@ def on_callback_query(msg):
      menuAdmin()
     elif query_data == 'enviarEnc':
      comenzarEncuesta()
-     bot.sendMenssage(from_id, 'Encuesta comenzada. Cuando contesten todos los alumnos o cuando introduzca /finEncuesta le llegarán los resultados.')
+     bot.sendMessage(from_id, 'Encuesta comenzada. Cuando contesten todos los alumnos o cuando introduzca /finEncuesta le llegarán los resultados.')
      menuAdmin()
     elif len(query_data) == 7 and query_data[0:6] == 'opcion' and (not from_id in cont) and admin[1] == 1:
-     respuestaEncuesta(from_id, query_data)
+     respuestaEncuesta(from_id, int(query_data[6]))
       
     
     
 
+
 def menuAdmin():
- if len(buzon) == 0: # If you have no new messages
+ if len(buzon) == 0: # Si no tiene mensajes
   bot.sendMessage(admin[0], 'No tiene mensajes en el buzón. ¿Qué desea hacer?', reply_markup=keyboardAdminSinMsg)
  else:
   n = len(buzon)
   bot.sendMessage(admin[0], txtMensajes(n) + '¿Qué desea hacer?', reply_markup=keyboardAdminMsg)
+
 
 def txtMensajes(n):
 	if n == 1:
@@ -169,32 +190,32 @@ def sacarMesajeBuzon():
 		bot.sendMessage(admin[0], msg, reply_markup=keyboardLeyendo)
 
 def comenzarEncuesta():
-	cont = []
-	for i in users:
-		bot.sendMessage(i, 'Comienza un nueva encuesta:')
-		bot.sendMessage(i, enc[0], reply_markup=enc[1])
+    del cont[:]
+    for i in users:
+        bot.sendMessage(i, 'Comienza un nueva encuesta:')
+        bot.sendMessage(i, enc[0], reply_markup=enc[1])
 		
 def respuestaEncuesta(from_id, query_data):
-	cont.append(from_id)
-	res[query_data[6]] = res[query_data[6]] + 1
-	bot.sendMenssage(from_id, 'Tu respuesta ha sido enviada.')
-	
-	if(len(users) == sum(res)):
-		admin[1] = 0
-		enviarResultados()
+    cont.append(from_id)
+    res[query_data] = res[query_data] + 1
+    bot.sendMessage(from_id, 'Tu respuesta ha sido enviada.')
+    
+    if(len(users) == sum(res)):
+        admin[1] = 0
+        enviarResultados()
      
 def enviarResultados():
-	msg = 'Resultados de la encuesta: '
-	for i in range(len(opciones)):
-		msg = msg + opciones[i] + ' -> ' + str(res[i]) + ' \n'
-	bot.sendMessage(admin[0], msg, reply_markup=keyboardLeyendo)
-
-def leerCopiaSeg():
-	cop = open('copiaSeg','r')
-	admin[0] = cop.read()
-	for u in cop:
-		users.append(u)
-	cop.close()
+    msg = 'Resultados de la encuesta: '
+    for i in range(len(opciones)):
+        msg = msg + opciones[i] + ' -> ' + str(res[i]) + ' \n'
+    bot.sendMessage(admin[0], msg, reply_markup=keyboardLeyendo)
+    del res[:]
+    del opciones[:]
+    del enc[:]
+    
+def difusion(msg):
+    for i in users:
+        bot.sendMessage(i, msg)
 
 def crearCopiaSeg():
 	cop = open('copiaSeg','w')
